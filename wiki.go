@@ -66,6 +66,10 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 	http.Redirect(w, r, "/view/"+title, http.StatusFound)
 }
 
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/view/FrontPage", http.StatusFound)
+}
+
 func makeHandler(fn func(w http.ResponseWriter, r *http.Request, title string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		match := validTitle.FindStringSubmatch(r.URL.Path)
@@ -79,6 +83,7 @@ func makeHandler(fn func(w http.ResponseWriter, r *http.Request, title string)) 
 }
 
 func main() {
+	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/view/", makeHandler(viewHandler))
 	http.HandleFunc("/edit/", makeHandler(editHandler))
 	http.HandleFunc("/save/", makeHandler(saveHandler))
