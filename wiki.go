@@ -14,7 +14,7 @@ type Page struct {
 }
 
 var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html"))
-var validTitle = regexp.MustCompile("^/(view|edit|save)/([a-zA-Z0-9 ]+)$")
+var validTitle = regexp.MustCompile("^/(view|edit|save)/([^/\\.]+)$")
 var persistentStoragePath = "data/"
 
 func (p *Page) save() error {
