@@ -6,11 +6,15 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+
+	"github.com/gomarkdown/markdown"
+	"github.com/microcosm-cc/bluemonday"
 )
 
 type Page struct {
-	Title string
-	Body  []byte
+	Title        string
+	Body         []byte
+	RenderedBody template.HTML
 }
 
 var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html"))
@@ -20,6 +24,12 @@ var persistentStoragePath = "data/"
 func (p *Page) save() error {
 	filename := persistentStoragePath + p.Title + ".txt"
 	return ioutil.WriteFile(filename, p.Body, 0600)
+}
+
+func (p *Page) renderMarkup() {
+	md := markdown.ToHTML(p.Body, nil, nil)
+	sanitized := bluemonday.UGCPolicy().SanitizeBytes(md)
+	p.RenderedBody = template.HTML(string(sanitized))
 }
 
 func loadPage(title string) (*Page, error) {
@@ -43,6 +53,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	if err != nil {
 		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
 	}
+	p.renderMarkup()
 	renderTemplate(w, "view", p)
 }
 
