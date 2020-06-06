@@ -1,14 +1,20 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 
-	"github.com/gomarkdown/markdown"
-	"github.com/gomarkdown/markdown/parser"
+	mathjax "github.com/litao91/goldmark-mathjax"
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer/html"
 )
 
 type Page struct {
@@ -26,15 +32,44 @@ func (p *Page) save() error {
 	return ioutil.WriteFile(filename, p.Body, 0600)
 }
 
+func processMath(bytes []byte) []byte {
+	text := string(bytes)
+
+	// Do display math first
+	dmath := ""
+	sections := strings.Split(text, "$$")
+
+	for i := 0; i < len(sections); i++ {
+		// The first element is always plain text
+		if i%2 == 0 {
+			dmath += sections[i]
+		} else {
+			dmath += "<span class=\"math display\">\\[" + sections[i] + "\\]</span>"
+		}
+	}
+
+	return []byte(dmath)
+}
+
 func (p *Page) renderMarkup() {
-	extensions := parser.CommonExtensions | parser.HardLineBreak | parser.SuperSubscript
-	parser := parser.NewWithExtensions(extensions)
+	md := goldmark.New(
+		goldmark.WithExtensions(mathjax.MathJax),
+		goldmark.WithParserOptions(
+			parser.WithAutoHeadingID(),
+		),
+		goldmark.WithRendererOptions(
+			html.WithHardWraps(),
+		),
+	)
 
-	md := markdown.ToHTML(p.Body, parser, nil)
-	sanitized := md //bluemonday.UGCPolicy().SanitizeBytes(md)
+	var html bytes.Buffer
 
-	//fmt.Printf("%s\n\n", sanitized)
+	if err := md.Convert(p.Body, &html); err != nil {
+		fmt.Print(err)
+	}
 
+	//withMath := processMath(p.Body)
+	sanitized := bluemonday.UGCPolicy().SanitizeBytes(html.Bytes())
 	p.RenderedBody = template.HTML(string(sanitized))
 }
 
