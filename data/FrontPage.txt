@@ -1,4 +1,15 @@
 This is a wiki written in GO.
 
 
--- Shizue
+--- *Shizue*
+
+
+### What are the formatting options?
+
+The text can be *italic*, **bold**, and ~~struckthrough~~ ~~(for comedic effect)~~.
+
+Math? $x = 2 + 3$.
+
+$$
+\int_{0}^{\infty} x^2 dx = \frac{1}{3} x^3
+$$

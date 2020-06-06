@@ -8,7 +8,7 @@ import (
 	"regexp"
 
 	"github.com/gomarkdown/markdown"
-	"github.com/microcosm-cc/bluemonday"
+	"github.com/gomarkdown/markdown/parser"
 )
 
 type Page struct {
@@ -27,8 +27,14 @@ func (p *Page) save() error {
 }
 
 func (p *Page) renderMarkup() {
-	md := markdown.ToHTML(p.Body, nil, nil)
-	sanitized := bluemonday.UGCPolicy().SanitizeBytes(md)
+	extensions := parser.CommonExtensions | parser.HardLineBreak | parser.SuperSubscript
+	parser := parser.NewWithExtensions(extensions)
+
+	md := markdown.ToHTML(p.Body, parser, nil)
+	sanitized := md //bluemonday.UGCPolicy().SanitizeBytes(md)
+
+	//fmt.Printf("%s\n\n", sanitized)
+
 	p.RenderedBody = template.HTML(string(sanitized))
 }
 
@@ -52,6 +58,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := loadPage(title)
 	if err != nil {
 		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
+		return
 	}
 	p.renderMarkup()
 	renderTemplate(w, "view", p)
@@ -78,7 +85,9 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 }
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/view/FrontPage", http.StatusFound)
+	if len(r.URL.Path) == 1 {
+		http.Redirect(w, r, "/view/FrontPage", http.StatusFound)
+	}
 }
 
 func makeHandler(fn func(w http.ResponseWriter, r *http.Request, title string)) http.HandlerFunc {
