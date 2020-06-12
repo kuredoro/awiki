@@ -2,7 +2,19 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>{{.Title}}</title>
+    
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet" type="text/css">
+    <link href="https://fonts.googleapis.com/css?family=Roboto+Mono" rel="stylesheet" type="text/css">
+    <link rel="stylesheet" type="text/css" href="/static/css/view.css">
+    <style>
+body {
+  background-color: linen;
+}
+
+h1 {
+  color: maroon;
+}
+</style>
 
     <!-- Katex -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/katex.min.css" integrity="sha384-zB1R0rpPzHqg7Kpt0Aljp8JPLqbXI3bhnPWROx27a9N0Ll6ZP/+DiW/UqRcLbRjq" crossorigin="anonymous">
@@ -15,12 +27,17 @@
             });
         });
     </script>
+    <title>{{.Title}}</title>
   </head>
   <body>
-    <h1>{{.Title}}</h1>
+    <div id="container">
+      <section class="inner">
+        <p><h1>{{.Title}}</h1></p>
 
-    <p>[<a href="/edit/{{.Title}}">edit</a>]</p>
+        <p>[<a href="/edit/{{.Title}}">edit</a>]</p>
 
-    <div>{{ .RenderedBody }}</div>
+        {{ .RenderedBody }}
+      </section>
+    </div>
   </body>
 </html>
