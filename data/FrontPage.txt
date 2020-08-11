@@ -3,12 +3,18 @@ This is a wiki written in GO.
 
 --- *Shizue*
 
+# Header 1
+## Header 2
+### Header 3
+#### Header 4
+##### Header 5
+###### Header 6
 
 ### What are the formatting options?
 
-The text can be *italic* and **bold**.
+The text can be *italic* and **bold**. ***boldalic***?
 
-Reprehenderit dolor vel natus voluptatum amet quia facere. Autem rerum dicta eos impedit occaecati porro. Ex non sed ipsa id a. Quis quas consequatur est ut. Consequatur sequi velit officia maiores.
+Reprehenderit dolor vel natus voluptatum amet quia facere. Autem rerum dicta eos impedit occaecati porro. Ex non sed ipsa id a. Quis quas consequatur est ut. Consequatur sequi velit officia `maiores`.
 
 Optio aspernatur officia et dolorem dolorem voluptas dolorem. Ducimus reprehenderit at suscipit eligendi porro earum molestias exercitationem. Laudantium rerum unde minus aut nisi.
 
