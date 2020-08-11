@@ -1,6 +1,7 @@
 package main
 
 import (
+    "os"
 	"bufio"
 	"bytes"
 	"fmt"
@@ -22,22 +23,34 @@ import (
 const deployPort = ":8080"
 
 
-var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html"))
-var validTitle = regexp.MustCompile("^/(view|edit|save)/([^/\\.]+)$")
+var templates = template.Must(template.ParseFiles("tmpl/front.html", "tmpl/view.html"))
 var nonIDchars = regexp.MustCompile("[^a-zA-Z0-9-]+")
-var persistentStoragePath = "data/"
-
-type MarkupHeader struct {
-    id string
-    title string
-    level int
-}
+var persistentStoragePath = "data"
 
 type ToCEntry struct {
-    id string
+    redirTo string
     title string
     level int
     sub []*ToCEntry
+}
+
+func GenMdHeader(raw ToCEntry) (title, redirTo string) {
+    // This is approximate id repr that md render outputs
+    title = raw.title
+    redirTo = strings.ToLower(title)
+    redirTo = strings.ReplaceAll(redirTo, " ", "-")
+    redirTo = nonIDchars.ReplaceAllString(redirTo, "")
+    redirTo = "#" + redirTo
+    return
+}
+
+type ToCSettings struct {
+    itemStart, itemEnd string
+    listStart, listEnd string
+}
+
+type FrontPage struct {
+    Index template.HTML
 }
 
 type Page struct {
@@ -48,7 +61,7 @@ type Page struct {
 }
 
 func (p *Page) save() error {
-	filename := persistentStoragePath + p.Title + ".txt"
+	filename := persistentStoragePath + "/" + p.Title + ".txt"
 	return ioutil.WriteFile(filename, p.Body, 0600)
 }
 
@@ -73,17 +86,18 @@ func (p *Page) renderMarkup() {
 	p.RenderedBody = template.HTML(string(sanitized))
 }
 
-func (p *Page) generateToC() {
-    var heads []MarkupHeader
+func extractHeaders(md []byte, strGen func(ToCEntry) (string, string)) []ToCEntry {
+
+    var heads []ToCEntry
     idCounter := make(map[string]int)
     minLevel := math.MaxInt32
 
-    scanner := bufio.NewScanner(bytes.NewReader(p.Body))
+    scanner := bufio.NewScanner(bytes.NewReader(md))
     for scanner.Scan() {
         line := scanner.Text()
         line = strings.TrimSpace(line)
 
-        var head MarkupHeader
+        var head ToCEntry
         for _, r := range line {
             if r != '#' {
                 break
@@ -96,16 +110,13 @@ func (p *Page) generateToC() {
             continue
         }
 
-        // This is approximate id repr that md render outputs
         head.title = strings.TrimSpace(line[head.level:])
-        head.id = strings.ToLower(head.title)
-        head.id = strings.ReplaceAll(head.id, " ", "-")
-        head.id = nonIDchars.ReplaceAllString(head.id, "")
+        head.title, head.redirTo = strGen(head)
 
-        dupId := idCounter[head.id]
-        idCounter[head.id]++
+        dupId := idCounter[head.redirTo]
+        idCounter[head.redirTo]++
         if dupId != 0 {
-            head.id += "-" + fmt.Sprint(dupId)
+            head.redirTo += "-" + fmt.Sprint(dupId)
         }
 
         heads = append(heads, head)
@@ -113,15 +124,18 @@ func (p *Page) generateToC() {
         if minLevel > head.level {
             minLevel = head.level
         }
-
-        log.Printf("h%d id=%q", head.level, head.id)
     }
+
+    return heads
+}
+
+func inflateToC(entries []ToCEntry) *ToCEntry {
 
     var toc ToCEntry
     s := make([]*ToCEntry, 1, 7)
     s[0] = &toc
 
-    for _, h := range heads {
+    for _, h := range entries {
         sLast := len(s)-1
         for ; sLast >= 0; sLast-- {
             if s[sLast].level < h.level {
@@ -131,7 +145,7 @@ func (p *Page) generateToC() {
         s = s[:sLast+1]
 
         entry := &ToCEntry{
-            id: h.id,
+            redirTo: h.redirTo,
             title: h.title,
             level: h.level,
         }
@@ -140,45 +154,76 @@ func (p *Page) generateToC() {
         s = append(s, entry)
     }
 
+    return &toc
+}
+
+func (p *Page) generateToC() {
+
+    headers := extractHeaders(p.Body, GenMdHeader)
+    toc := inflateToC(headers)
+
+    if len(toc.sub) == 0 {
+        p.AsideToC = template.HTML("")
+        return
+    }
+
+    asideToC := ToCSettings{
+        itemStart: "<li>",
+        itemEnd:   "</li>",
+        listStart: "<ol>",
+        listEnd:   "</ol>",
+    }
+
     var str strings.Builder
-    marshallToC(&str, toc.sub)
+    str.WriteString("<aside id=\"toc-aside\" class=\"\">\n<h2>Table of Contents</h2>\n")
+    asideToC.marshall(&str, toc.sub)
+    str.WriteString("</aside>\n")
 
     p.AsideToC = template.HTML(str.String())
 }
 
 
-func marshallToC(str *strings.Builder, x interface{}) {
+func (s *ToCSettings) marshall(str *strings.Builder, x interface{}) {
 
     switch val := x.(type) {
     case *ToCEntry:
-        str.WriteString(fmt.Sprintf("<li>\n<a href=\"#%s\">%s</a>\n", val.id, val.title))
+        str.WriteString(s.itemStart)
+        str.WriteString(fmt.Sprintf("\n<a href=\"%s\">%s</a>\n", val.redirTo, val.title))
 
         if len(val.sub) > 0 {
-            marshallToC(str, val.sub)
+            s.marshall(str, val.sub)
         }
 
-        str.WriteString("</li>\n")
+        str.WriteString(s.itemEnd)
+        str.WriteRune('\n')
         
     case []*ToCEntry:
-        str.WriteString("<ol>\n")
+        str.WriteString(s.listStart)
+        str.WriteRune('\n')
         for _, p := range val {
-            marshallToC(str, p)
+            s.marshall(str, p)
         }
-        str.WriteString("</ol>\n")
-
-    default:
-        log.Printf("got unknown type %T", val)
+        str.WriteString(s.listEnd)
+        str.WriteRune('\n')
     }
 }
 
 
-func loadPage(title string) (*Page, error) {
-	filename := persistentStoragePath + title + ".txt"
+func loadPage(path string) (*Page, error) {
+	filename := persistentStoragePath + "/" + path + ".txt"
 	body, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	return &Page{Title: title, Body: body}, nil
+
+    for slashPos := len(path)-1; slashPos >= 0; slashPos-- {
+        if path[slashPos] == '/' {
+            path = path[slashPos+1:]
+            break
+        }
+    }
+
+	return &Page{Title: path, Body: body}, nil
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
@@ -188,7 +233,9 @@ func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 	}
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
+func viewHandler(w http.ResponseWriter, r *http.Request) {
+    title := strings.TrimPrefix(r.URL.Path, "/")
+
 	p, err := loadPage(title)
 	if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -200,52 +247,101 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	renderTemplate(w, "view", p)
 }
 
-/*
-func editHandler(w http.ResponseWriter, r *http.Request, title string) {
-	p, err := loadPage(title)
-
-	if err != nil {
-		p = &Page{Title: title}
-	}
-
-	renderTemplate(w, "edit", p)
-}
-
-func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
-	body := r.FormValue("body")
-	p := &Page{Title: title, Body: []byte(body)}
-	err := p.save()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-	http.Redirect(w, r, "/view/"+title, http.StatusFound)
-}
-*/
-
 func rootHandler(w http.ResponseWriter, r *http.Request) {
-	if len(r.URL.Path) == 1 {
-		http.Redirect(w, r, "/view/FrontPage", http.StatusFound)
+	if len(r.URL.Path) != 1 {
+        viewHandler(w, r)
+        return
 	}
+
+    headers, err := treeDir(persistentStoragePath, 0)
+    if err != nil {
+        http.Error(w, fmt.Sprintf("could not generate index for pages, %v", err), http.StatusInternalServerError)
+    }
+
+    if len(headers) > 0 {
+        headers[0].level = 1
+    }
+
+    var page FrontPage
+    page.Index = template.HTML(renderIndex(headers))
+
+    err = templates.ExecuteTemplate(w, "front.html", page)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
 }
 
-func makeHandler(fn func(w http.ResponseWriter, r *http.Request, title string)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		match := validTitle.FindStringSubmatch(r.URL.Path)
-		if match == nil {
-			http.NotFound(w, r)
-			return
-		}
+func treeDir(path string, level int) ([]*ToCEntry, error) {
+    f, err := os.Open(path)
+    if err != nil {
+        return nil, fmt.Errorf("couldn't open path %q", path)
+    }
 
-		fn(w, r, match[2])
-	}
+    fileInfo, err := f.Readdir(-1)
+    if err != nil {
+        return nil, fmt.Errorf("couldn't list directory %q", path)
+    }
+    f.Close()
+
+    var dirName string
+    for slashPos := len(path)-1; slashPos >= 0; slashPos-- {
+        if path[slashPos] == '/' {
+            dirName = path[slashPos+1:]
+            break
+        }
+    }
+
+    locDir := strings.TrimPrefix(path, persistentStoragePath)
+
+    var dirs []string
+    var heads []*ToCEntry
+    heads = append(heads, &ToCEntry{title: dirName, level: level})
+
+    for _, file := range fileInfo {
+        if file.IsDir() {
+            dirs = append(dirs, file.Name())
+            continue
+        }
+
+        entry := ToCEntry{level: 0}
+        entry.title = strings.TrimSuffix(file.Name(), ".txt")
+        entry.redirTo = locDir + "/" + entry.title
+        heads = append(heads, &entry)
+    }
+
+    for _, dir := range dirs {
+        subHeads, err := treeDir(path + "/" + dir, level+1)
+        if err != nil {
+            return nil, err // Info is already incoded in the path passed to tree
+        }
+
+        heads = append(heads, subHeads...)
+    }
+
+    return heads, nil
+}
+
+func renderIndex(heads []*ToCEntry) string {
+    var str strings.Builder
+
+    for _, head := range heads {
+        if 0 < head.level && head.level < 7 {
+            str.WriteString(fmt.Sprintf("<h%d>%s</h%d>\n", head.level+1, head.title, head.level+1))
+        }
+
+        if head.level == 0 {
+            str.WriteString(fmt.Sprintf("<a href=\"%s\">%s</a><br />\n", head.redirTo, head.title))
+        }
+    }
+
+    return str.String()
 }
 
 func main() {
 	http.HandleFunc("/", rootHandler)
-	http.HandleFunc("/view/", makeHandler(viewHandler))
-	//http.HandleFunc("/edit/", makeHandler(editHandler))
-	//http.HandleFunc("/save/", makeHandler(saveHandler))
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
     log.Printf("Deployed at http://localhost%s\n", deployPort)
 	log.Fatal(http.ListenAndServe(deployPort, nil))
 }
