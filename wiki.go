@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -17,38 +19,37 @@ import (
 	"github.com/yuin/goldmark/renderer/html"
 )
 
+const deployPort = ":8080"
+
+
+var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html"))
+var validTitle = regexp.MustCompile("^/(view|edit|save)/([^/\\.]+)$")
+var nonIDchars = regexp.MustCompile("[^a-zA-Z0-9-]+")
+var persistentStoragePath = "data/"
+
+type MarkupHeader struct {
+    id string
+    title string
+    level int
+}
+
+type ToCEntry struct {
+    id string
+    title string
+    level int
+    sub []*ToCEntry
+}
+
 type Page struct {
 	Title        string
 	Body         []byte
 	RenderedBody template.HTML
+    AsideToC     template.HTML
 }
-
-var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html"))
-var validTitle = regexp.MustCompile("^/(view|edit|save)/([^/\\.]+)$")
-var persistentStoragePath = "data/"
 
 func (p *Page) save() error {
 	filename := persistentStoragePath + p.Title + ".txt"
 	return ioutil.WriteFile(filename, p.Body, 0600)
-}
-
-func processMath(bytes []byte) []byte {
-	text := string(bytes)
-
-	// Do display math first
-	dmath := ""
-	sections := strings.Split(text, "$$")
-
-	for i := 0; i < len(sections); i++ {
-		// The first element is always plain text
-		if i%2 == 0 {
-			dmath += sections[i]
-		} else {
-			dmath += "<span class=\"math display\">\\[" + sections[i] + "\\]</span>"
-		}
-	}
-
-	return []byte(dmath)
 }
 
 func (p *Page) renderMarkup() {
@@ -68,10 +69,108 @@ func (p *Page) renderMarkup() {
 		fmt.Print(err)
 	}
 
-	//withMath := processMath(p.Body)
 	sanitized := bluemonday.UGCPolicy().SanitizeBytes(html.Bytes())
 	p.RenderedBody = template.HTML(string(sanitized))
 }
+
+func (p *Page) generateToC() {
+    var heads []MarkupHeader
+    idCounter := make(map[string]int)
+    minLevel := math.MaxInt32
+
+    scanner := bufio.NewScanner(bytes.NewReader(p.Body))
+    for scanner.Scan() {
+        line := scanner.Text()
+        line = strings.TrimSpace(line)
+
+        var head MarkupHeader
+        for _, r := range line {
+            if r != '#' {
+                break
+            }
+
+            head.level++
+        }
+
+        if head.level == 0 {
+            continue
+        }
+
+        // This is approximate id repr that md render outputs
+        head.title = strings.TrimSpace(line[head.level:])
+        head.id = strings.ToLower(head.title)
+        head.id = strings.ReplaceAll(head.id, " ", "-")
+        head.id = nonIDchars.ReplaceAllString(head.id, "")
+
+        dupId := idCounter[head.id]
+        idCounter[head.id]++
+        if dupId != 0 {
+            head.id += "-" + fmt.Sprint(dupId)
+        }
+
+        heads = append(heads, head)
+        
+        if minLevel > head.level {
+            minLevel = head.level
+        }
+
+        log.Printf("h%d id=%q", head.level, head.id)
+    }
+
+    var toc ToCEntry
+    s := make([]*ToCEntry, 1, 7)
+    s[0] = &toc
+
+    for _, h := range heads {
+        sLast := len(s)-1
+        for ; sLast >= 0; sLast-- {
+            if s[sLast].level < h.level {
+                break
+            }
+        }
+        s = s[:sLast+1]
+
+        entry := &ToCEntry{
+            id: h.id,
+            title: h.title,
+            level: h.level,
+        }
+
+        s[sLast].sub = append(s[sLast].sub, entry)
+        s = append(s, entry)
+    }
+
+    var str strings.Builder
+    marshallToC(&str, toc.sub)
+
+    p.AsideToC = template.HTML(str.String())
+}
+
+
+func marshallToC(str *strings.Builder, x interface{}) {
+
+    switch val := x.(type) {
+    case *ToCEntry:
+        str.WriteString(fmt.Sprintf("<li>\n<a href=\"#%s\">%s</a>\n", val.id, val.title))
+
+        if len(val.sub) > 0 {
+            marshallToC(str, val.sub)
+        }
+
+        str.WriteString("</li>\n")
+        
+    case []*ToCEntry:
+        str.WriteString("<ol>\n")
+        for _, p := range val {
+            marshallToC(str, p)
+        }
+        str.WriteString("</ol>\n")
+
+    default:
+        log.Printf("got unknown type %T", val)
+    }
+}
+
 
 func loadPage(title string) (*Page, error) {
 	filename := persistentStoragePath + title + ".txt"
@@ -92,13 +191,16 @@ func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := loadPage(title)
 	if err != nil {
-		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
+        http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	p.renderMarkup()
+    p.generateToC()
 	renderTemplate(w, "view", p)
 }
 
+/*
 func editHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := loadPage(title)
 
@@ -118,6 +220,7 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 	}
 	http.Redirect(w, r, "/view/"+title, http.StatusFound)
 }
+*/
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	if len(r.URL.Path) == 1 {
@@ -140,15 +243,9 @@ func makeHandler(fn func(w http.ResponseWriter, r *http.Request, title string)) 
 func main() {
 	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/view/", makeHandler(viewHandler))
-	http.HandleFunc("/edit/", makeHandler(editHandler))
-	http.HandleFunc("/save/", makeHandler(saveHandler))
+	//http.HandleFunc("/edit/", makeHandler(editHandler))
+	//http.HandleFunc("/save/", makeHandler(saveHandler))
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-	log.Fatal(http.ListenAndServe(":8080", nil))
-
-	/*
-		p1 := &Page{Title: "Example", Body: []byte("This is an example page.")}
-		p1.save()
-		p2, _ := loadPage("Example")
-		fmt.Println(string(p2.Body))
-	*/
+    log.Printf("Deployed at http://localhost%s\n", deployPort)
+	log.Fatal(http.ListenAndServe(deployPort, nil))
 }

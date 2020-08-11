@@ -28,14 +28,25 @@
         <a href="/" title="Home">Awiki</a>
       </h2>
       <p><small>Just another wiki</small></p>
-                
+ 
+      <aside id="all-posts-link"><a href="/" title="All Posts">« All Posts</a></aside>               
+
     </div>
   </header>
   
   <div>
+
+    <aside id="toc-aside" class="">
+      <h2>Table of Contents</h2>
+      {{.AsideToC}}
+    </aside>
+
     <main>
         <h1>{{.Title}}</h1>
-        <p>[<a href="/edit/{{.Title}}">edit</a>]<hr /></p>
+        <time class="post-date" datetime="2020-08-11">
+            Aug 11, 2020
+
+        </time>
 
         {{ .RenderedBody }}
     </main>
