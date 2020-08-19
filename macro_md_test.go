@@ -19,7 +19,6 @@ func TestMMDConvert(t *testing.T) {
             input: "test .i text",
             want: "*test* text",
         },
-        /*
         {
             style: MMDStyle {
                 "i": "*",
@@ -27,7 +26,29 @@ func TestMMDConvert(t *testing.T) {
             input: "test.i text .i",
             want: "*test* *text*",
         },
-        */
+        {
+            style: MMDStyle {
+                "i": "*",
+            },
+            input: ".i.itest.i text .i",
+            want: "*.itest* *text*",
+        },
+        {
+            style: MMDStyle {
+                "i": "*",
+                "c": "`",
+            },
+            input: ".i.itest.c text .i",
+            want: "`.itest` *text*",
+        },
+        {
+            style: MMDStyle {
+                "i": "*",
+                "c": "`",
+            },
+            input: "test text .i2 is wierd sometimes .c3.",
+            want: "*test text* `is wierd sometimes`.",
+        },
     }
 
     for _, test := range cases {
