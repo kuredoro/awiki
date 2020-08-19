@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -18,6 +19,7 @@ func TestMMDConvert(t *testing.T) {
             input: "test .i text",
             want: "*test* text",
         },
+        /*
         {
             style: MMDStyle {
                 "i": "*",
@@ -25,6 +27,7 @@ func TestMMDConvert(t *testing.T) {
             input: "test.i text .i",
             want: "*test* *text*",
         },
+        */
     }
 
     for _, test := range cases {
@@ -88,4 +91,66 @@ func TestMMDFindMacros(t *testing.T) {
             }
         })
     }
+}
+
+func TestMMDSeekBack(t *testing.T) {
+    text := []byte("This is an example.")
+    cases := []struct {
+        desc string
+        pos int
+        want int
+    } {
+        {
+            pos: 8,
+            want: 5,
+        },
+        {
+            pos: 5,
+            want: 0,
+        },
+        {
+            pos: 0,
+            want: 0,
+        },
+        {
+            pos: 2,
+            want: 0,
+        },
+        {
+            pos: 6,
+            want: 5,
+        },
+    }
+
+    for _, test := range cases {
+        t.Run(showOffsets(text, test.pos, -1),
+        func(t *testing.T) {
+            got := seekWordBackwards(text, test.pos)
+
+            if got != test.want {
+                info := showOffsets(text, test.want, got)
+                t.Errorf("<got> %d, (want) %d, %s", got, test.want, info)
+            }
+        })
+    }
+}
+
+func showOffsets(text []byte, wantPos, gotPos int) string {
+    var str strings.Builder
+
+    for i := range text {
+        if i == wantPos {
+            str.WriteByte('(')
+            str.WriteByte(text[i])
+            str.WriteByte(')')
+        } else if i == gotPos {
+            str.WriteByte('<')
+            str.WriteByte(text[i])
+            str.WriteByte('>')
+        } else {
+            str.WriteByte(text[i])
+        }
+    }
+
+    return str.String()
 }

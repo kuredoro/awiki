@@ -84,3 +84,22 @@ func (c *MMDConverter) findMacroEntries(text []byte) (macros []InTextMacro) {
 
     return
 }
+
+
+func seekWordBackwards(text []byte, pos int) int {
+    pos--
+
+    for ; pos >= 0; pos-- {
+        if !unicode.IsSpace(rune(text[pos])) {
+            break
+        }
+    }
+
+    for ; pos >= 0; pos-- {
+        if unicode.IsSpace(rune(text[pos])) {
+            break
+        }
+    }
+
+    return pos+1
+}
