@@ -66,6 +66,10 @@ func (p *Page) save() error {
 }
 
 func (p *Page) renderMarkup() {
+
+    mmd := NewMacroMarkdown(defaultMacros)
+    troffedBody := mmd.Convert(p.Body)
+
 	md := goldmark.New(
 		goldmark.WithExtensions(mathjax.MathJax),
 		goldmark.WithParserOptions(
@@ -78,7 +82,7 @@ func (p *Page) renderMarkup() {
 
 	var html bytes.Buffer
 
-	if err := md.Convert(p.Body, &html); err != nil {
+	if err := md.Convert(troffedBody, &html); err != nil {
 		fmt.Print(err)
 	}
 
